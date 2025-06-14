@@ -37,7 +37,7 @@ def setup_directories():
 
 def check_dependencies():
     """Check if critical dependencies are available"""
-    critical_deps = ['torch', 'gradio', 'transformers', 'diffusers']
+    critical_deps = ['torch', 'gradio', 'transformers', 'diffusers', 'mmgp']
     missing_deps = []
     
     for dep in critical_deps:

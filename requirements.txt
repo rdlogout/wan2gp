@@ -37,4 +37,3 @@ opencv-python
 # pygame>=2.1.0  # Removed for HF Spaces - audio not needed in web environment
 # sounddevice>=0.4.0  # Removed for HF Spaces - audio not needed in web environment
 huggingface_hub
-spaces

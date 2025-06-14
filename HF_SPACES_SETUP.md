@@ -8,7 +8,8 @@ This document explains the modifications made to make Wan2GP compatible with Hug
 
 - **Removed**: `onnxruntime-gpu` → replaced with `onnxruntime` for better compatibility
 - **Removed**: `pygame` and `sounddevice` → not needed in web environments
-- **Added**: `huggingface_hub` and `spaces` for HF Spaces integration
+- **Added**: `huggingface_hub` for HF Hub integration
+- **Note**: The `spaces` module is provided by HF Spaces environment, not installed via pip
 
 ### 2. Application Modifications (`app.py`)
 
@@ -107,6 +108,12 @@ In your Space settings:
 - **Check**: All dependencies in requirements.txt are properly installed
 - **Solution**: Restart the Space to trigger fresh installation
 - **Debug**: Check the startup logs for specific missing packages
+
+#### 5. "spaces has no attribute 'gradio_auto_wrap'" error
+
+- **Cause**: Conflict between installed `spaces` package and HF Spaces built-in module
+- **Solution**: Remove `spaces` from requirements.txt (HF Spaces provides it automatically)
+- **Fixed**: This issue has been resolved in the current setup
 
 ## Model Recommendations by Hardware
 

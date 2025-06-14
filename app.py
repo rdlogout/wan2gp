@@ -5274,8 +5274,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                             value=[],
                             line_breaks= True,
                             visible= True,
-                            elem_id="queue_df",
-                            max_height= 1000
+                            elem_id="queue_df"
 
                         )
                     with gr.Row(visible= True):

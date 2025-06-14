@@ -4800,7 +4800,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                 with gr.Column(scale=6):
                     lset_name = gr.Dropdown(show_label=False, allow_custom_value= True, scale=5, filterable=True, choices= lset_choices, value=launch_preset)
                 with gr.Column(scale=1):
-                    with gr.Row(height=17):
+                    with gr.Row():
                         apply_lset_btn = gr.Button("Apply Lora Preset", size="sm", min_width= 1)
                         refresh_lora_btn = gr.Button("Refresh", size="sm", min_width= 1, visible=advanced_ui or not only_allow_edit_in_advanced)
                         save_lset_prompt_drop= gr.Dropdown(
@@ -4809,10 +4809,10 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                                 ("Save Full Prompt", 1)
                             ],  show_label= False, container=False, value =1, visible= False
                         ) 
-                    with gr.Row(height=17, visible=False) as refresh2_row:
+                    with gr.Row(visible=False) as refresh2_row:
                         refresh_lora_btn2 = gr.Button("Refresh", size="sm", min_width= 1)
 
-                    with gr.Row(height=17, visible=advanced_ui or not only_allow_edit_in_advanced) as preset_buttons_rows:
+                    with gr.Row(visible=advanced_ui or not only_allow_edit_in_advanced) as preset_buttons_rows:
                         confirm_save_lset_btn = gr.Button("Go Ahead Save it !", size="sm", min_width= 1, visible=False) 
                         confirm_delete_lset_btn = gr.Button("Go Ahead Delete it !", size="sm", min_width= 1, visible=False) 
                         save_lset_btn = gr.Button("Save", size="sm", min_width= 1)

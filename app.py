@@ -6320,6 +6320,8 @@ def create_ui():
                         model_choice = generate_dropdown_model_list(transformer_type)
                         gr.Markdown("<div class='title-with-lines'><div class=line width=100%></div></div>")
                 with gr.Row():
+                    header = gr.Markdown(generate_header(transformer_type, compile, attention_mode), visible=True)
+                with gr.Row():
                     (   state, loras_choices, lset_name, state,
                         video_guide, video_mask, image_refs, video_prompt_type_video_trigger, prompt_enhancer_row
                     ) = generate_video_tab(model_choice=model_choice, header=header, main = main)

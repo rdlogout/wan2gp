@@ -22,7 +22,7 @@ peft==0.14.0
 mutagen
 pydantic==2.10.6
 decord
-onnxruntime
+onnxruntime-gpu
 rembg[gpu]==2.0.65
 matplotlib
 timm
@@ -34,6 +34,6 @@ loguru
 sentencepiece
 av
 opencv-python
-# pygame>=2.1.0  # Removed for HF Spaces - audio not needed in web environment
-# sounddevice>=0.4.0  # Removed for HF Spaces - audio not needed in web environment
-huggingface_hub
+pygame>=2.1.0
+sounddevice>=0.4.0
+# rembg==2.0.65

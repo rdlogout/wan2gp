@@ -643,7 +643,7 @@ class WanModel(ModelMixin, ConfigMixin):
                     print(f"Lora alpha'{alpha_key}' is missing")
             new_sd.update(new_alphas)
             sd = new_sd
-        from app import test_class_i2v 
+        from wgp import test_class_i2v 
         if not test_class_i2v(model_type):
             new_sd = {}
             # convert loras for i2v to t2v

@@ -4,27 +4,6 @@ import sys
 import threading
 import argparse
 from mmgp import offload, safetensors2, profile_type 
-
-# HF Spaces environment detection
-RUNNING_ON_HF_SPACES = os.getenv("SPACE_ID") is not None
-
-# Handle audio dependencies gracefully for HF Spaces
-try:
-    import pygame
-    PYGAME_AVAILABLE = True
-except ImportError:
-    PYGAME_AVAILABLE = False
-    if not RUNNING_ON_HF_SPACES:
-        print("Warning: pygame not available - audio notifications disabled")
-
-try:
-    import sounddevice
-    SOUNDDEVICE_AVAILABLE = True
-except ImportError:
-    SOUNDDEVICE_AVAILABLE = False
-    if not RUNNING_ON_HF_SPACES:
-        print("Warning: sounddevice not available - audio capture disabled")
-
 try:
     import triton
 except ImportError:
@@ -35,19 +14,7 @@ import gradio as gr
 import random
 import json
 import wan
-
-# Handle audio notifications import gracefully
-try:
-    from wan.utils import notification_sound
-except ImportError:
-    # Create dummy notification_sound module for HF Spaces
-    class DummyNotificationSound:
-        def play_notification_sound(self, *args, **kwargs):
-            pass
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: None
-    notification_sound = DummyNotificationSound()
-
+from wan.utils import notification_sound
 from wan.configs import MAX_AREA_CONFIGS, WAN_CONFIGS, SUPPORTED_SIZES, VACE_SIZE_CONFIGS
 from wan.utils.utils import cache_video
 from wan.modules.attention import get_attention_modes, get_supported_attention_modes
@@ -1503,21 +1470,12 @@ attention_modes_installed = get_attention_modes()
 attention_modes_supported = get_supported_attention_modes()
 args = _parse_args()
 
-# Handle GPU detection gracefully for HF Spaces
-try:
-    if torch.cuda.is_available():
-        major, minor = torch.cuda.get_device_capability(args.gpu if len(args.gpu) > 0 else None)
-        if major < 8:
-            print("Switching to FP16 models when possible as GPU architecture doesn't support optimized BF16 Kernels")
-            bfloat16_supported = False
-        else:
-            bfloat16_supported = True
-    else:
-        print("CUDA not available - running on CPU")
-        bfloat16_supported = False
-except Exception as e:
-    print(f"GPU detection failed: {e} - defaulting to CPU mode")
+major, minor = torch.cuda.get_device_capability(args.gpu if len(args.gpu) > 0 else None)
+if  major < 8:
+    print("Switching to FP16 models when possible as GPU architecture doesn't support optimed BF16 Kernels")
     bfloat16_supported = False
+else:
+    bfloat16_supported = True
 
 args.flow_reverse = True
 processing_device = args.gpu
@@ -1561,11 +1519,9 @@ for src,tgt in zip(src_move,tgt_move):
     
 
 if not Path(server_config_filename).is_file():
-    # Default configuration optimized for HF Spaces
-    default_model = "t2v_1.3B" if RUNNING_ON_HF_SPACES else model_types[0]
     server_config = {
         "attention_mode" : "auto",  
-        "transformer_types": [default_model], 
+        "transformer_types": [], 
         "transformer_quantization": "int8",
         "text_encoder_quantization" : "int8",
         "save_path": "outputs", #os.path.join(os.getcwd(), 
@@ -1984,12 +1940,6 @@ save_path = server_config.get("save_path", os.path.join(os.getcwd(), "gradio_out
 preload_model_policy = server_config.get("preload_model_policy", []) 
 
 
-# Set HF Spaces optimized defaults
-if RUNNING_ON_HF_SPACES:
-    # For HF Spaces, default to a lighter model
-    if not any([args.t2v_14B, args.t2v, args.i2v_14B, args.i2v, args.t2v_1_3B, args.i2v_1_3B, args.vace_1_3B]):
-        transformer_type = "t2v_1.3B"  # Default to 1.3B model for HF Spaces
-
 if args.t2v_14B or args.t2v: 
     transformer_type = "t2v"
 
@@ -2152,7 +2102,7 @@ def download_models(model_filename, model_type):
             "sourceFolderList" :  [ "llava-llama-3-8b", "clip_vit_large_patch14",  "whisper-tiny" , "det_align", ""  ],
             "fileList" :[ ["config.json", "special_tokens_map.json", "tokenizer.json", "tokenizer_config.json", "preprocessor_config.json"] + computeList(text_encoder_filename) ,
                           ["config.json", "merges.txt", "model.safetensors", "preprocessor_config.json", "special_tokens_map.json", "tokenizer.json", "tokenizer_config.json", "vocab.json"],
-                          ["config.json", "model.safetensors", "preprocessor_config.json", "special_tokens_map.json", "tokenizer.json", "tokenizer_config.json", "vocab.json"],
+                          ["config.json", "model.safetensors", "preprocessor_config.json", "special_tokens_map.json", "tokenizer_config.json"],
                           ["detface.pt"],
                           [ "hunyuan_video_720_quanto_int8_map.json", "hunyuan_video_custom_VAE_fp32.safetensors", "hunyuan_video_custom_VAE_config.json", "hunyuan_video_VAE_fp32.safetensors", "hunyuan_video_VAE_config.json" , "hunyuan_video_720_quanto_int8_map.json"   ] + computeList(model_filename)  
                          ]
@@ -4694,7 +4644,7 @@ def fill_inputs(state):
  
     return generate_video_tab(update_form = True, state_dict = state, ui_defaults = ui_defaults)
 
-def preload_model_when_switching(state):                
+def preload_model_when_switching(state):
     global reload_needed, wan_model, offloadobj
     if "S" in preload_model_policy:
         model_type = state["model_type"] 
@@ -6303,8 +6253,8 @@ def create_ui():
     else:
         theme = gr.themes.Soft(font=["Verdana"], primary_hue="sky", neutral_hue="slate", text_size="md")
 
-    with gr.Blocks(css=css, theme=theme, title="WanGP") as main:
-        gr.Markdown(f"<div align=center><H1>Wan<SUP>GP</SUP> v{WanGP_version} <FONT SIZE=4>by <I>DeepBeepMeep</I></FONT> <FONT SIZE=3></FONT></H1></div>")
+    with gr.Blocks(css=css, theme=theme, title= "WanGP") as main:
+        gr.Markdown(f"<div align=center><H1>Wan<SUP>GP</SUP> v{WanGP_version} <FONT SIZE=4>by <I>DeepBeepMeep</I></FONT> <FONT SIZE=3>") # (<A HREF='https://github.com/deepbeepmeep/Wan2GP'>Updates</A>)</FONT SIZE=3></H1></div>")
         global model_list
 
         tab_state = gr.State({ "tab_no":0 }) 
@@ -6320,7 +6270,7 @@ def create_ui():
                         model_choice = generate_dropdown_model_list(transformer_type)
                         gr.Markdown("<div class='title-with-lines'><div class=line width=100%></div></div>")
                 with gr.Row():
-                    header = gr.Markdown(generate_header(transformer_type, compile, attention_mode), visible=True)
+                    header = gr.Markdown(generate_header(transformer_type, compile, attention_mode), visible= True)
                 with gr.Row():
                     (   state, loras_choices, lset_name, state,
                         video_guide, video_mask, image_refs, video_prompt_type_video_trigger, prompt_enhancer_row
@@ -6348,40 +6298,22 @@ if __name__ == "__main__":
     download_ffmpeg()
     # threading.Thread(target=runner, daemon=True).start()
     os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
-    
-    # HF Spaces configuration
-    if RUNNING_ON_HF_SPACES:
-        server_port = 7860
+    server_port = int(args.server_port)
+    if os.name == "nt":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    if server_port == 0:
+        server_port = int(os.getenv("SERVER_PORT", "7860"))
+    server_name = args.server_name
+    if args.listen:
         server_name = "0.0.0.0"
-        share = False
-        open_browser = False
-    else:
-        server_port = int(args.server_port)
-        if os.name == "nt":
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        if server_port == 0:
-            server_port = int(os.getenv("SERVER_PORT", "7860"))
-        server_name = args.server_name
-        if args.listen:
-            server_name = "0.0.0.0"
-        if len(server_name) == 0:
-            server_name = os.getenv("SERVER_NAME", "localhost")
-        share = args.share
-        open_browser = args.open_browser
-        
+    if len(server_name) == 0:
+        server_name = os.getenv("SERVER_NAME", "localhost")      
     demo = create_ui()
-    
-    if open_browser and not RUNNING_ON_HF_SPACES:
+    if args.open_browser:
         import webbrowser 
         if server_name.startswith("http"):
             url = server_name 
         else:
             url = "http://" + server_name 
         webbrowser.open(url + ":" + str(server_port), new = 0, autoraise = True)
-    
-    demo.launch(
-        server_name=server_name, 
-        server_port=server_port, 
-        share=share, 
-        allowed_paths=[save_path]
-    )
+    demo.launch(server_name=server_name, server_port=server_port, share=True, allowed_paths=[save_path])

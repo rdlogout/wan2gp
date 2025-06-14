@@ -5350,7 +5350,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
 
             start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js = get_js()
 
-            status_trigger.change(refresh_status_async, inputs= [state] , outputs= [gen_status], show_progress_on= [gen_status])
+            status_trigger.change(refresh_status_async, inputs= [state] , outputs= [gen_status])
 
             output_trigger.change(refresh_gallery,
                 inputs = [state], 

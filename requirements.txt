@@ -36,4 +36,5 @@ av
 opencv-python
 pygame>=2.1.0
 sounddevice>=0.4.0
+psutil>=5.8.0
 # rembg==2.0.65

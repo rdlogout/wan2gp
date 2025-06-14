@@ -1483,12 +1483,72 @@ attention_modes_installed = get_attention_modes()
 attention_modes_supported = get_supported_attention_modes()
 args = _parse_args()
 
+def detect_system_resources():
+    """Automatically detect system resources and recommend optimal profile"""
+    try:
+        # Get GPU information
+        if torch.cuda.is_available():
+            gpu_count = torch.cuda.device_count()
+            total_vram_gb = 0
+            gpu_names = []
+
+            for i in range(gpu_count):
+                gpu_props = torch.cuda.get_device_properties(i)
+                vram_gb = gpu_props.total_memory / (1024**3)
+                total_vram_gb += vram_gb
+                gpu_names.append(gpu_props.name)
+
+            # Get system RAM (approximate)
+            import psutil
+            total_ram_gb = psutil.virtual_memory().total / (1024**3)
+
+            print(f"===== System Resource Detection =====")
+            print(f"GPU(s): {', '.join(gpu_names)}")
+            print(f"Total VRAM: {total_vram_gb:.1f} GB")
+            print(f"Total RAM: {total_ram_gb:.1f} GB")
+
+            # Determine optimal profile based on resources
+            # Profile 1: HighRAM_HighVRAM (48GB RAM + 24GB VRAM)
+            # Profile 2: HighRAM_LowVRAM (48GB RAM + 12GB VRAM)
+            # Profile 3: LowRAM_HighVRAM (32GB RAM + 24GB VRAM)
+            # Profile 4: LowRAM_LowVRAM (32GB RAM + 12GB VRAM)
+            # Profile 5: VeryLowRAM_LowVRAM (16GB RAM + 10GB VRAM)
+
+            if total_vram_gb >= 24 and total_ram_gb >= 48:
+                recommended_profile = 1  # HighRAM_HighVRAM - Best quality and speed
+                print("✅ Recommended Profile: 1 (HighRAM_HighVRAM) - Optimal for quality")
+            elif total_vram_gb >= 12 and total_ram_gb >= 48:
+                recommended_profile = 2  # HighRAM_LowVRAM - Good balance
+                print("✅ Recommended Profile: 2 (HighRAM_LowVRAM) - Good for quality with high RAM")
+            elif total_vram_gb >= 24 and total_ram_gb >= 32:
+                recommended_profile = 3  # LowRAM_HighVRAM - Good for short videos
+                print("✅ Recommended Profile: 3 (LowRAM_HighVRAM) - Good for short high-quality videos")
+            elif total_vram_gb >= 12 and total_ram_gb >= 32:
+                recommended_profile = 4  # LowRAM_LowVRAM - Default
+                print("✅ Recommended Profile: 4 (LowRAM_LowVRAM) - Balanced")
+            else:
+                recommended_profile = 5  # VeryLowRAM_LowVRAM - Failsafe
+                print("⚠️  Recommended Profile: 5 (VeryLowRAM_LowVRAM) - Minimal requirements")
+
+            return recommended_profile, total_vram_gb, total_ram_gb
+
+        else:
+            print("⚠️  No CUDA GPU detected, using CPU fallback")
+            return 5, 0, 0  # Failsafe profile
+
+    except Exception as e:
+        print(f"⚠️  Resource detection failed: {e}")
+        return 4, 0, 0  # Default fallback
+
 major, minor = torch.cuda.get_device_capability(args.gpu if len(args.gpu) > 0 else None)
 if  major < 8:
     print("Switching to FP16 models when possible as GPU architecture doesn't support optimed BF16 Kernels")
     bfloat16_supported = False
 else:
     bfloat16_supported = True
+
+# Detect system resources and get recommended profile
+recommended_profile, detected_vram_gb, detected_ram_gb = detect_system_resources()
 
 args.flow_reverse = True
 processing_device = args.gpu
@@ -1532,21 +1592,53 @@ for src,tgt in zip(src_move,tgt_move):
     
 
 if not Path(server_config_filename).is_file():
+    # Use detected profile for new installations
+    auto_profile = recommended_profile
+
+    # Quality-focused defaults based on detected resources
+    if detected_vram_gb >= 16:
+        # High-end setup: prioritize quality
+        default_quantization = "bf16"  # Better quality than int8
+        default_text_encoder_quantization = "bf16"
+        default_vae_precision = "32"  # Better quality
+        default_mixed_precision = "1"  # Better quality
+        default_boost = 1  # Enable boost for quality
+        print("🎨 Quality-focused defaults applied (high-end hardware detected)")
+    elif detected_vram_gb >= 12:
+        # Mid-range setup: balanced quality
+        default_quantization = "int8"
+        default_text_encoder_quantization = "bf16"  # Text encoder in bf16 for better prompts
+        default_vae_precision = "16"
+        default_mixed_precision = "1"
+        default_boost = 1
+        print("⚖️  Balanced quality defaults applied (mid-range hardware detected)")
+    else:
+        # Low-end setup: performance over quality
+        default_quantization = "int8"
+        default_text_encoder_quantization = "int8"
+        default_vae_precision = "16"
+        default_mixed_precision = "0"
+        default_boost = 2  # Disable boost to save VRAM
+        print("⚡ Performance-focused defaults applied (limited hardware detected)")
+
     server_config = {
-        "attention_mode" : "auto",  
-        "transformer_types": [], 
-        "transformer_quantization": "int8",
-        "text_encoder_quantization" : "int8",
-        "save_path": "outputs", #os.path.join(os.getcwd(), 
+        "attention_mode" : "auto",
+        "transformer_types": [],
+        "transformer_quantization": default_quantization,
+        "text_encoder_quantization" : default_text_encoder_quantization,
+        "vae_precision": default_vae_precision,
+        "mixed_precision": default_mixed_precision,
+        "save_path": "outputs", #os.path.join(os.getcwd(),
         "compile" : "",
         "metadata_type": "metadata",
         "default_ui": "t2v",
-        "boost" : 1,
+        "boost" : default_boost,
         "clear_file_list" : 5,
         "vae_config": 0,
-        "profile" : profile_type.LowRAM_LowVRAM,
+        "profile" : auto_profile,
         "preload_model_policy": [],
-        "UI_theme": "default"
+        "UI_theme": "default",
+        "auto_detected_profile": True  # Flag to indicate auto-detection was used
     }
 
     with open(server_config_filename, "w", encoding="utf-8") as writer:
@@ -1802,26 +1894,52 @@ def get_default_settings(model_type):
             ui_defaults = finetune_def["settings"] 
             if len(ui_defaults.get("prompt","")) == 0:
                 ui_defaults["prompt"]= get_default_prompt(i2v)
-        else:    
+        else:
+            # Quality-focused defaults based on detected hardware
+            if detected_vram_gb >= 16:
+                # High-end: Maximum quality settings
+                quality_steps = 35  # More steps for better quality
+                quality_guidance = 6.0  # Higher guidance for better adherence
+                quality_resolution = "1280x720" if "720" in model_type else "960x544"  # Higher resolution
+                quality_tea_cache = 0.0  # Disable TeaCache for maximum quality
+                quality_slg = 1  # Enable Skip Layer Guidance for quality
+                print("🎨 High-quality UI defaults applied")
+            elif detected_vram_gb >= 12:
+                # Mid-range: Balanced quality
+                quality_steps = 30
+                quality_guidance = 5.5
+                quality_resolution = "1280x720" if "720" in model_type else "832x480"
+                quality_tea_cache = 0.0  # Still prioritize quality
+                quality_slg = 0
+                print("⚖️  Balanced UI defaults applied")
+            else:
+                # Low-end: Performance with acceptable quality
+                quality_steps = 25  # Fewer steps for speed
+                quality_guidance = 5.0
+                quality_resolution = "832x480"  # Lower resolution for speed
+                quality_tea_cache = 1.5  # Enable TeaCache for speed
+                quality_slg = 0
+                print("⚡ Performance-focused UI defaults applied")
+
             ui_defaults = {
                 "prompt": get_default_prompt(i2v),
-                "resolution": "1280x720" if "720" in model_type else "832x480",
+                "resolution": quality_resolution,
                 "video_length": 81,
-                "num_inference_steps": 30,
+                "num_inference_steps": quality_steps,
                 "seed": -1,
                 "repeat_generation": 1,
-                "multi_images_gen_type": 0,        
-                "guidance_scale": 5.0,
+                "multi_images_gen_type": 0,
+                "guidance_scale": quality_guidance,
                 "embedded_guidance_scale" : 6.0,
                 "audio_guidance_scale": 5.0,
-                "flow_shift": 7.0 if not "720" in model_type and i2v else 5.0, 
+                "flow_shift": 7.0 if not "720" in model_type and i2v else 5.0,
                 "negative_prompt": "",
                 "activated_loras": [],
                 "loras_multipliers": "",
-                "tea_cache": 0.0,
+                "tea_cache": quality_tea_cache,
                 "tea_cache_start_step_perc": 0,
                 "RIFLEx_setting": 0,
-                "slg_switch": 0,
+                "slg_switch": quality_slg,
                 "slg_layers": [9],
                 "slg_start_perc": 10,
                 "slg_end_perc": 90
@@ -1941,6 +2059,20 @@ if len(args.attention)> 0:
         raise Exception(f"Unknown attention mode '{args.attention}'")
 
 profile =  force_profile_no if force_profile_no >=0 else server_config["profile"]
+
+# Show profile information to user
+profile_names = {
+    1: "HighRAM_HighVRAM (Profile 1)",
+    2: "HighRAM_LowVRAM (Profile 2)",
+    3: "LowRAM_HighVRAM (Profile 3)",
+    4: "LowRAM_LowVRAM (Profile 4)",
+    5: "VeryLowRAM_LowVRAM (Profile 5)"
+}
+
+if server_config.get("auto_detected_profile", False) and force_profile_no < 0:
+    print(f"🚀 Using auto-detected profile: {profile_names.get(profile, f'Profile {profile}')}")
+else:
+    print(f"📋 Using configured profile: {profile_names.get(profile, f'Profile {profile}')}")
 compile = server_config.get("compile", "")
 boost = server_config.get("boost", 1)
 vae_config = server_config.get("vae_config", 0)
@@ -2418,9 +2550,20 @@ def generate_header(model_type, compile, attention_mode):
 
     description_container = [""]
     get_model_name(model_type, description_container)
-    model_filename = get_model_filename(model_type, transformer_quantization, transformer_dtype_policy)    
+    model_filename = get_model_filename(model_type, transformer_quantization, transformer_dtype_policy)
     description  = description_container[0]
     header = "<DIV style='height:40px'>" + description + "</DIV>"
+
+    # Add resource detection info
+    if server_config.get("auto_detected_profile", False):
+        profile_names = {1: "HighRAM_HighVRAM", 2: "HighRAM_LowVRAM", 3: "LowRAM_HighVRAM", 4: "LowRAM_LowVRAM", 5: "VeryLowRAM_LowVRAM"}
+        current_profile = server_config.get("profile", 4)
+        profile_name = profile_names.get(current_profile, f"Profile {current_profile}")
+
+        if detected_vram_gb > 0:
+            header += f"<DIV style='color:#4CAF50;font-size:12px;margin-bottom:5px'>🚀 Auto-detected: {detected_vram_gb:.1f}GB VRAM, {detected_ram_gb:.1f}GB RAM → {profile_name}</DIV>"
+        else:
+            header += f"<DIV style='color:#4CAF50;font-size:12px;margin-bottom:5px'>🚀 Auto-configured: {profile_name}</DIV>"
 
     header += "<DIV style='align:right;width:100%'><FONT SIZE=3>Attention mode <B>" + (attention_mode if attention_mode!="auto" else "auto/" + get_auto_attention() )
     if attention_mode not in attention_modes_installed:

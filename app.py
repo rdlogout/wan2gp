@@ -3,7 +3,7 @@ import time
 import sys
 import threading
 import argparse
-from mmgp import offload, safetensors2, profile_type 
+from mmgp import offload, safetensors2, profile_type
 try:
     import triton
 except ImportError:
@@ -13,6 +13,12 @@ from datetime import datetime
 import gradio as gr
 import random
 import json
+
+# Disable audio in containerized environments to prevent ALSA errors
+if os.environ.get('XDG_RUNTIME_DIR') is None and os.environ.get('DISPLAY') is None:
+    os.environ['SDL_AUDIODRIVER'] = 'dummy'
+    os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+
 import wan
 from wan.utils import notification_sound
 from wan.configs import MAX_AREA_CONFIGS, WAN_CONFIGS, SUPPORTED_SIZES, VACE_SIZE_CONFIGS
@@ -5577,13 +5583,13 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
 
 def generate_download_tab(lset_name,loras_choices, state):
     with gr.Row():
-        with gr.Row(scale =2):
+        with gr.Column(scale=2):
             gr.Markdown("<I>WanGP's Lora Festival ! Press the following button to download i2v <B>Remade_AI</B> Loras collection (and bonuses Loras).")
-        with gr.Row(scale =1):
-            download_loras_btn = gr.Button("---> Let the Lora's Festival Start !", scale =1)
-        with gr.Row(scale =1):
+        with gr.Column(scale=1):
+            download_loras_btn = gr.Button("---> Let the Lora's Festival Start !", scale=1)
+        with gr.Column(scale=1):
             gr.Markdown("")
-    with gr.Row() as download_status_row: 
+    with gr.Row() as download_status_row:
         download_status = gr.Markdown()
 
     download_loras_btn.click(fn=download_loras, inputs=[], outputs=[download_status_row, download_status]).then(fn=refresh_lora_list, inputs=[state, lset_name,loras_choices], outputs=[lset_name, loras_choices])

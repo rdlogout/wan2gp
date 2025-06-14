@@ -108,6 +108,10 @@ def generate_notification_beep(volume=50, sample_rate=44100):
 def play_audio_with_pygame(audio_data, sample_rate=44100):
     """Play audio using pygame backend"""
     try:
+        # Check if we're in a containerized environment without audio
+        if os.environ.get('XDG_RUNTIME_DIR') is None and os.environ.get('DISPLAY') is None:
+            return False
+
         import pygame
         # Initialize pygame mixer only if not already initialized
         if not pygame.mixer.get_init():
@@ -120,22 +124,22 @@ def play_audio_with_pygame(audio_data, sample_rate=44100):
                 pygame.mixer.quit()
                 pygame.mixer.pre_init(frequency=sample_rate, size=-16, channels=2, buffer=1024)
                 pygame.mixer.init()
-        
+
         audio_int16 = (audio_data * 32767).astype(np.int16)
-        
+
         # Convert mono to stereo
         if len(audio_int16.shape) == 1:
             stereo_data = np.column_stack((audio_int16, audio_int16))
         else:
             stereo_data = audio_int16
-        
+
         sound = pygame.sndarray.make_sound(stereo_data)
         sound.play()
         pygame.time.wait(int(len(audio_data) / sample_rate * 1000) + 100)
         # Don't quit mixer - this can interfere with Gradio server
         # pygame.mixer.quit()
         return True
-        
+
     except ImportError:
         return False
     except Exception as e:
@@ -146,11 +150,15 @@ def play_audio_with_pygame(audio_data, sample_rate=44100):
 def play_audio_with_sounddevice(audio_data, sample_rate=44100):
     """Play audio using sounddevice backend"""
     try:
+        # Check if we're in a containerized environment without audio
+        if os.environ.get('XDG_RUNTIME_DIR') is None and os.environ.get('DISPLAY') is None:
+            return False
+
         import sounddevice as sd
         sd.play(audio_data, sample_rate)
         sd.wait()
         return True
-        
+
     except ImportError:
         return False
     except Exception as e:

@@ -18,6 +18,13 @@ import json
 if os.environ.get('XDG_RUNTIME_DIR') is None and os.environ.get('DISPLAY') is None:
     os.environ['SDL_AUDIODRIVER'] = 'dummy'
     os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+    print("===== Detected containerized environment, audio disabled =====")
+
+# Check if running in Hugging Face Spaces
+if os.getenv("SPACE_ID") is not None:
+    print(f"===== Running in Hugging Face Spaces (ID: {os.getenv('SPACE_ID')}) =====")
+else:
+    print("===== Running in local development environment =====")
 
 import wan
 from wan.utils import notification_sound
@@ -1943,7 +1950,12 @@ if len(args.vae_config) > 0:
 reload_needed = False
 default_ui = server_config.get("default_ui", "t2v") 
 save_path = server_config.get("save_path", os.path.join(os.getcwd(), "gradio_outputs"))
-preload_model_policy = server_config.get("preload_model_policy", []) 
+# Disable model preloading in Hugging Face Spaces for faster startup
+is_huggingface_space = os.getenv("SPACE_ID") is not None
+if is_huggingface_space:
+    preload_model_policy = []  # Disable preloading in HF Spaces
+else:
+    preload_model_policy = server_config.get("preload_model_policy", [])
 
 
 if args.t2v_14B or args.t2v: 
@@ -6300,7 +6312,14 @@ def create_ui():
 
 if __name__ == "__main__":
     atexit.register(autosave_queue)
-    download_ffmpeg()
+
+    # Detect if running in Hugging Face Spaces
+    is_huggingface_space = os.getenv("SPACE_ID") is not None
+
+    if not is_huggingface_space:
+        # Only download ffmpeg for local development to speed up HF Spaces startup
+        download_ffmpeg()
+
     # threading.Thread(target=runner, daemon=True).start()
     os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
     server_port = int(args.server_port)
@@ -6312,13 +6331,37 @@ if __name__ == "__main__":
     if args.listen:
         server_name = "0.0.0.0"
     if len(server_name) == 0:
-        server_name = os.getenv("SERVER_NAME", "localhost")      
+        server_name = os.getenv("SERVER_NAME", "localhost")
+
+    print("===== Creating UI =====")
     demo = create_ui()
-    if args.open_browser:
-        import webbrowser 
+    print("===== UI Created Successfully =====")
+
+    if args.open_browser and not is_huggingface_space:
+        import webbrowser
         if server_name.startswith("http"):
-            url = server_name 
+            url = server_name
         else:
-            url = "http://" + server_name 
+            url = "http://" + server_name
         webbrowser.open(url + ":" + str(server_port), new = 0, autoraise = True)
-    demo.launch(server_name=server_name, server_port=server_port, share=True, allowed_paths=[save_path])
+
+    if is_huggingface_space:
+        print("===== Launching for Hugging Face Spaces =====")
+        # Hugging Face Spaces configuration
+        demo.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,  # Don't use share in HF Spaces
+            allowed_paths=[save_path],
+            show_error=True,
+            quiet=False  # Show startup messages
+        )
+    else:
+        print("===== Launching for Local Development =====")
+        # Local development configuration
+        demo.launch(
+            server_name=server_name,
+            server_port=server_port,
+            share=True,
+            allowed_paths=[save_path]
+        )

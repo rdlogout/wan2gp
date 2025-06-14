@@ -5257,7 +5257,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                     with gr.Accordion("Preview", open=False) as queue_accordion:
                         preview = gr.Image(label="Preview", height=200, show_label= False)
                         preview_trigger = gr.Text(visible= False)
-                    gen_info = gr.HTML(visible=False, min_height=1) 
+                    gen_info = gr.HTML(visible=False) 
                     with gr.Row():
                         onemoresample_btn = gr.Button("One More Sample Please !")
                         onemorewindow_btn = gr.Button("Extend this Sample Please !", visible = False)

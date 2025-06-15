@@ -13,6 +13,7 @@ from datetime import datetime
 import gradio as gr
 import random
 import json
+from collections import deque
 
 # Disable audio in containerized environments to prevent ALSA errors
 if os.environ.get('XDG_RUNTIME_DIR') is None and os.environ.get('DISPLAY') is None:
@@ -57,6 +58,10 @@ global_queue_ref = []
 AUTOSAVE_FILENAME = "queue.zip"
 PROMPT_VARS_MAX = 10
 
+# Global log management
+global_log_messages = deque(maxlen=1000)  # Keep last 1000 log messages
+log_lock = threading.Lock()
+
 target_mmgp_version = "3.4.9"
 WanGP_version = "6.0"
 prompt_enhancer_image_caption_model, prompt_enhancer_image_caption_processor, prompt_enhancer_llm_model, prompt_enhancer_llm_tokenizer = None, None, None, None
@@ -72,28 +77,42 @@ task_id = 0
 
 
 def download_ffmpeg():
-    if os.name != 'nt': return
+    if os.name != 'nt':
+        add_log_message("FFmpeg download skipped (not Windows)", "INFO")
+        return
     exes = ['ffmpeg.exe', 'ffprobe.exe', 'ffplay.exe']
-    if all(os.path.exists(e) for e in exes): return
+    if all(os.path.exists(e) for e in exes):
+        add_log_message("FFmpeg already exists, skipping download", "INFO")
+        return
+
+    add_log_message("Starting FFmpeg download for Windows...", "DOWNLOAD")
     api_url = 'https://api.github.com/repos/GyanD/codexffmpeg/releases/latest'
     r = requests.get(api_url, headers={'Accept': 'application/vnd.github+json'})
     assets = r.json().get('assets', [])
     zip_asset = next((a for a in assets if 'essentials_build.zip' in a['name']), None)
-    if not zip_asset: return
+    if not zip_asset:
+        add_log_message("FFmpeg download failed: No suitable asset found", "ERROR")
+        return
+
     zip_url = zip_asset['browser_download_url']
     zip_name = zip_asset['name']
+    add_log_message(f"Downloading {zip_name}...", "DOWNLOAD")
+
     with requests.get(zip_url, stream=True) as resp:
         total = int(resp.headers.get('Content-Length', 0))
         with open(zip_name, 'wb') as f, tqdm(total=total, unit='B', unit_scale=True) as pbar:
             for chunk in resp.iter_content(chunk_size=8192):
                 f.write(chunk)
                 pbar.update(len(chunk))
+
+    add_log_message("Extracting FFmpeg executables...", "DOWNLOAD")
     with zipfile.ZipFile(zip_name) as z:
         for f in z.namelist():
             if f.endswith(tuple(exes)) and '/bin/' in f:
                 z.extract(f)
                 os.rename(f, os.path.basename(f))
     os.remove(zip_name)
+    add_log_message("FFmpeg download and extraction completed", "SUCCESS")
 
 def format_time(seconds):
     if seconds < 60:
@@ -105,6 +124,38 @@ def format_time(seconds):
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         return f"{hours}h {minutes}m"
+
+def add_log_message(message, log_type="INFO"):
+    """Add a message to the global log with timestamp and type"""
+    global global_log_messages, log_lock
+
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    formatted_message = f"[{timestamp}] [{log_type}] {message}"
+
+    with log_lock:
+        global_log_messages.append(formatted_message)
+
+    # Also print to console for debugging
+    print(formatted_message)
+
+def get_log_messages():
+    """Get all current log messages as a formatted string"""
+    global global_log_messages, log_lock
+
+    with log_lock:
+        if not global_log_messages:
+            return "No log messages yet..."
+        return "\n".join(global_log_messages)
+
+def clear_log_messages():
+    """Clear all log messages"""
+    global global_log_messages, log_lock
+
+    with log_lock:
+        global_log_messages.clear()
+
+    add_log_message("Log cleared by user", "SYSTEM")
+    return get_log_messages()
 def pil_to_base64_uri(pil_image, format="png", quality=75):
     if pil_image is None:
         return None
@@ -143,10 +194,10 @@ def is_integer(n):
 
 
 def process_prompt_and_add_tasks(state, model_choice):
- 
+
     if state.get("validate_success",0) != 1:
         return
-    
+
     state["validate_success"] = 0
 
     model_filename = state["model_filename"]
@@ -154,6 +205,8 @@ def process_prompt_and_add_tasks(state, model_choice):
     inputs = state.get(model_type, None)
     if model_choice != model_type or inputs ==None:
         raise gr.Error("Webform can not be used as the App has been restarted since the form was displayed. Please refresh the page")
+
+    add_log_message(f"Processing prompt for model: {model_type}", "GENERATION")
     
     inputs["state"] =  state
     inputs["model_type"] = model_type
@@ -506,6 +559,9 @@ def add_video_task(**inputs):
     current_task_id = task_id
 
     start_image_data, end_image_data = get_preview_images(inputs)
+
+    prompt_preview = inputs["prompt"][:50] + "..." if len(inputs["prompt"]) > 50 else inputs["prompt"]
+    add_log_message(f"Added task #{current_task_id} to queue: '{prompt_preview}' ({inputs['video_length']} frames, {inputs['num_inference_steps']} steps)", "QUEUE")
 
     queue.append({
         "id": current_task_id,
@@ -907,6 +963,7 @@ def clear_queue_action(state):
     with lock:
         if "in_progress" in gen and gen["in_progress"]:
             print("Clear Queue: Signalling abort for in-progress task.")
+            add_log_message("Aborting current generation task", "QUEUE")
             gen["abort"] = True
             gen["extra_orders"] = 0
             if wan_model is not None:
@@ -916,6 +973,7 @@ def clear_queue_action(state):
         if queue:
              if len(queue) > 1 or (len(queue) == 1 and queue[0] is not None and queue[0].get('id') is not None):
                  print(f"Clear Queue: Clearing {len(queue)} tasks from queue.")
+                 add_log_message(f"Clearing {len(queue)} tasks from queue", "QUEUE")
                  queue.clear()
                  cleared_pending = True
              else:
@@ -1597,13 +1655,17 @@ if not Path(server_config_filename).is_file():
 
     # Quality-focused defaults based on detected resources
     if detected_vram_gb >= 16:
-        # High-end setup: prioritize quality
+        # High-end setup: prioritize quality (46GB VRAM detected)
         default_quantization = "bf16"  # Better quality than int8
         default_text_encoder_quantization = "bf16"
         default_vae_precision = "32"  # Better quality
         default_mixed_precision = "1"  # Better quality
         default_boost = 1  # Enable boost for quality
-        print("🎨 Quality-focused defaults applied (high-end hardware detected)")
+        default_enhancer_enabled = 1  # Enable prompt enhancer for quality
+        default_vae_config = 1  # Disable VAE tiling for maximum quality (plenty of VRAM)
+        default_preload_policy = ["P", "S"]  # Preload and keep models loaded for speed
+        print("🎨 Ultra-quality defaults applied (high-end hardware detected)")
+        add_log_message(f"Ultra-quality configuration applied: {detected_vram_gb:.1f}GB VRAM, {detected_ram_gb:.1f}GB RAM", "SYSTEM")
     elif detected_vram_gb >= 12:
         # Mid-range setup: balanced quality
         default_quantization = "int8"
@@ -1611,6 +1673,9 @@ if not Path(server_config_filename).is_file():
         default_vae_precision = "16"
         default_mixed_precision = "1"
         default_boost = 1
+        default_enhancer_enabled = 0  # Disable for mid-range to save VRAM
+        default_vae_config = 0  # Auto VAE tiling
+        default_preload_policy = ["P"]  # Only preload on startup
         print("⚖️  Balanced quality defaults applied (mid-range hardware detected)")
     else:
         # Low-end setup: performance over quality
@@ -1619,6 +1684,9 @@ if not Path(server_config_filename).is_file():
         default_vae_precision = "16"
         default_mixed_precision = "0"
         default_boost = 2  # Disable boost to save VRAM
+        default_enhancer_enabled = 0  # Disable for low-end
+        default_vae_config = 0  # Auto VAE tiling
+        default_preload_policy = []  # No preloading
         print("⚡ Performance-focused defaults applied (limited hardware detected)")
 
     server_config = {
@@ -1634,10 +1702,15 @@ if not Path(server_config_filename).is_file():
         "default_ui": "t2v",
         "boost" : default_boost,
         "clear_file_list" : 5,
-        "vae_config": 0,
+        "vae_config": default_vae_config,
         "profile" : auto_profile,
-        "preload_model_policy": [],
+        "preload_model_policy": default_preload_policy,
         "UI_theme": "default",
+        "enhancer_enabled": default_enhancer_enabled,
+        "fit_canvas": 0,  # Pixel budget mode for quality
+        "preload_in_VRAM": 0,  # Auto-detect based on profile
+        "notification_sound_enabled": 1,
+        "notification_sound_volume": 50,
         "auto_detected_profile": True  # Flag to indicate auto-detection was used
     }
 
@@ -1897,13 +1970,15 @@ def get_default_settings(model_type):
         else:
             # Quality-focused defaults based on detected hardware
             if detected_vram_gb >= 16:
-                # High-end: Maximum quality settings
-                quality_steps = 35  # More steps for better quality
-                quality_guidance = 6.0  # Higher guidance for better adherence
-                quality_resolution = "1280x720" if "720" in model_type else "960x544"  # Higher resolution
+                # High-end: Maximum quality settings (46GB VRAM detected)
+                quality_steps = 40  # Maximum steps for best quality
+                quality_guidance = 7.0  # Higher guidance for better adherence
+                quality_resolution = "1280x720" if "720" in model_type else "1280x720"  # Maximum resolution
                 quality_tea_cache = 0.0  # Disable TeaCache for maximum quality
                 quality_slg = 1  # Enable Skip Layer Guidance for quality
-                print("🎨 High-quality UI defaults applied")
+                quality_video_length = 97  # Longer videos by default
+                quality_prompt_enhancer = "TI"  # Enable both text and image prompt enhancement
+                print("🎨 Ultra-quality UI defaults applied (46GB VRAM detected)")
             elif detected_vram_gb >= 12:
                 # Mid-range: Balanced quality
                 quality_steps = 30
@@ -1911,6 +1986,8 @@ def get_default_settings(model_type):
                 quality_resolution = "1280x720" if "720" in model_type else "832x480"
                 quality_tea_cache = 0.0  # Still prioritize quality
                 quality_slg = 0
+                quality_video_length = 81
+                quality_prompt_enhancer = ""  # Disabled for mid-range
                 print("⚖️  Balanced UI defaults applied")
             else:
                 # Low-end: Performance with acceptable quality
@@ -1919,12 +1996,14 @@ def get_default_settings(model_type):
                 quality_resolution = "832x480"  # Lower resolution for speed
                 quality_tea_cache = 1.5  # Enable TeaCache for speed
                 quality_slg = 0
+                quality_video_length = 81
+                quality_prompt_enhancer = ""  # Disabled for low-end
                 print("⚡ Performance-focused UI defaults applied")
 
             ui_defaults = {
                 "prompt": get_default_prompt(i2v),
                 "resolution": quality_resolution,
-                "video_length": 81,
+                "video_length": quality_video_length,
                 "num_inference_steps": quality_steps,
                 "seed": -1,
                 "repeat_generation": 1,
@@ -1942,7 +2021,8 @@ def get_default_settings(model_type):
                 "slg_switch": quality_slg,
                 "slg_layers": [9],
                 "slg_start_perc": 10,
-                "slg_end_perc": 90
+                "slg_end_perc": 90,
+                "prompt_enhancer": quality_prompt_enhancer
             }
 
             if model_type in ("hunyuan","hunyuan_i2v"):
@@ -2504,6 +2584,7 @@ def load_models(model_type):
  
     global prompt_enhancer_image_caption_model, prompt_enhancer_image_caption_processor, prompt_enhancer_llm_model, prompt_enhancer_llm_tokenizer
     if server_config.get("enhancer_enabled", 0) == 1:
+        add_log_message("Loading prompt enhancer models (Florence2 + Llama3.2)...", "MODEL")
         from transformers import ( AutoModelForCausalLM, AutoProcessor, AutoTokenizer, LlamaForCausalLM )
         prompt_enhancer_image_caption_model = AutoModelForCausalLM.from_pretrained( "ckpts/Florence2", trust_remote_code=True)
         prompt_enhancer_image_caption_processor = AutoProcessor.from_pretrained( "ckpts/Florence2", trust_remote_code=True)
@@ -2514,11 +2595,13 @@ def load_models(model_type):
         prompt_enhancer_image_caption_model._model_dtype = torch.float
         if "budgets" in kwargs:
             kwargs["budgets"]["prompt_enhancer_llm_model"] = 5000
+        add_log_message("Prompt enhancer models loaded successfully", "MODEL")
     else:
         prompt_enhancer_image_caption_model = None
         prompt_enhancer_image_caption_processor = None
         prompt_enhancer_llm_model = None
         prompt_enhancer_llm_tokenizer = None
+        add_log_message("Prompt enhancer disabled", "SYSTEM")
 
         
     offloadobj = offload.profile(pipe, profile_no= profile, compile = compile, quantizeTransformer = False, loras = "transformer", coTenantsMap= {}, perc_reserved_mem_max = perc_reserved_mem_max , convertWeightsFloatTo = transformer_dtype, **kwargs)  
@@ -2531,12 +2614,15 @@ def load_models(model_type):
 if not "P" in preload_model_policy:
     wan_model, offloadobj, transformer = None, None, None
     reload_needed = True
+    add_log_message("Model preloading disabled - models will load on demand", "SYSTEM")
 else:
+    add_log_message(f"Preloading model: {get_model_name(transformer_type)}", "SYSTEM")
     wan_model, offloadobj, transformer = load_models(transformer_type)
     if check_loras:
         setup_loras(transformer_type, transformer,  get_lora_dir(transformer_type), "", None)
         exit()
     del transformer
+    add_log_message(f"Model preloaded successfully: {get_model_name(transformer_type)}", "SYSTEM")
 
 gen_in_progress = False
 
@@ -3212,8 +3298,10 @@ def generate_video(
             offloadobj = None
         gc.collect()
         send_cmd("status", f"Loading model {get_model_name(model_type)}...")
+        add_log_message(f"Loading model: {get_model_name(model_type)}", "MODEL")
         wan_model, offloadobj, trans = load_models(model_type)
         send_cmd("status", "Model loaded")
+        add_log_message(f"Model loaded successfully: {get_model_name(model_type)}", "MODEL")
         reload_needed=  False
 
     if attention_mode == "auto":
@@ -4120,8 +4208,10 @@ def process_tasks(state):
             if cmd == "exit":
                 break
             elif cmd == "info":
+                add_log_message(data, "INFO")
                 gr.Info(data)
-            elif cmd == "error": 
+            elif cmd == "error":
+                add_log_message(data, "ERROR")
                 queue.clear()
                 gen["prompts_max"] = 0
                 gen["prompt"] = ""
@@ -4129,16 +4219,23 @@ def process_tasks(state):
 
                 raise gr.Error(data, print_exception= False)
             elif cmd == "status":
+                add_log_message(data, "STATUS")
                 gen["status"] = data
             elif cmd == "output":
+                add_log_message("Video generation completed", "SUCCESS")
                 gen["preview"] = None
-                yield time.time() , time.time() 
+                yield time.time() , time.time()
             elif cmd == "progress":
+                # Log progress updates less frequently to avoid spam
+                if data and len(data) >= 2:
+                    progress_info = data[1] if isinstance(data[1], str) else str(data[1])
+                    if "Denoising" in progress_info or "VAE" in progress_info:
+                        add_log_message(progress_info, "PROGRESS")
                 gen["progress_args"] = data
                 # progress(*data)
             elif cmd == "preview":
                 torch.cuda.current_stream().synchronize()
-                preview= None if data== None else generate_preview(data) 
+                preview= None if data== None else generate_preview(data)
                 gen["preview"] = preview
                 yield time.time() , gr.Text()
             else:
@@ -4874,8 +4971,10 @@ def preload_model_when_switching(state):
                 offloadobj = None
             gc.collect()
             model_filename = get_model_name(model_type)
+            add_log_message(f"Preloading model: {model_filename}", "MODEL")
             yield f"Loading model {model_filename}..."
             wan_model, offloadobj, _ = load_models(model_type)
+            add_log_message(f"Model preloaded successfully: {model_filename}", "MODEL")
             yield f"Model loaded"
             reload_needed=  False 
         return   
@@ -4885,11 +4984,13 @@ def unload_model_if_needed(state):
     global reload_needed, wan_model, offloadobj
     if "U" in preload_model_policy:
         if wan_model != None:
+            add_log_message("Unloading model to free memory", "MODEL")
             wan_model = None
             if offloadobj is not None:
                 offloadobj.release()
                 offloadobj = None
             gc.collect()
+            add_log_message("Model unloaded successfully", "MODEL")
             reload_needed=  True
 
 def filter_letters(source_str, letters):
@@ -5512,6 +5613,27 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                         hidden_countdown_state = gr.Number(value=-1, visible=False, elem_id="hidden_countdown_state_num")
                         single_hidden_trigger_btn = gr.Button("trigger_countdown", visible=False, elem_id="trigger_info_single_btn")
 
+                # Add Log Box Section
+                with gr.Accordion("Server Logs", open=False) as log_accordion:
+                    with gr.Row():
+                        log_display = gr.Textbox(
+                            label="Server Activity Log",
+                            value="No log messages yet...",
+                            lines=15,
+                            max_lines=20,
+                            interactive=False,
+                            elem_id="log_display",
+                            show_copy_button=True,
+                            autoscroll=True
+                        )
+                    with gr.Row():
+                        refresh_log_btn = gr.Button("🔄 Refresh", size="sm", variant="secondary")
+                        clear_log_btn = gr.Button("🗑️ Clear Logs", size="sm", variant="stop")
+                        auto_refresh_log = gr.Checkbox(label="Auto-refresh logs", value=True, scale=1)
+
+                    # Hidden trigger for auto-refresh
+                    log_refresh_trigger = gr.Text(visible=False)
+
         extra_inputs = prompt_vars + [wizard_prompt, wizard_variables_var, wizard_prompt_activated_var, video_prompt_column, image_prompt_column,
                                       prompt_column_advanced, prompt_column_wizard_vars, prompt_column_wizard, lset_name, advanced_row, speed_tab, quality_tab,
                                       sliding_window_tab, misc_tab, prompt_enhancer_row, inference_steps_row, skip_layer_guidance_row,
@@ -5569,6 +5691,16 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                 gen = get_gen_info(state)
                 gen["status_display"] = True
                 return time.time()
+
+            def refresh_log_display():
+                """Refresh the log display with current messages"""
+                return get_log_messages()
+
+            def refresh_log_auto(auto_refresh_enabled):
+                """Auto-refresh logs if enabled"""
+                if auto_refresh_enabled:
+                    return get_log_messages(), time.time()
+                return gr.update(), gr.update()
 
             start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js, force_abort_keyboard_js = get_js()
 
@@ -5792,6 +5924,33 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                 inputs=[],
                 outputs=[modal_container]
             )
+
+            # Log management events
+            refresh_log_btn.click(
+                fn=refresh_log_display,
+                inputs=[],
+                outputs=[log_display]
+            )
+
+            clear_log_btn.click(
+                fn=clear_log_messages,
+                inputs=[],
+                outputs=[log_display]
+            )
+
+            # Auto-refresh logs every 2 seconds when enabled
+            log_refresh_trigger.change(
+                fn=refresh_log_auto,
+                inputs=[auto_refresh_log],
+                outputs=[log_display, log_refresh_trigger],
+                every=2
+            )
+
+            # Initialize log system when main app loads
+            if main is not None:
+                main.load(fn=lambda: (get_log_messages(), time.time()),
+                         inputs=None,
+                         outputs=[log_display, log_refresh_trigger])
 
     return ( state, loras_choices, lset_name, state,
              video_guide, video_mask, image_refs, video_prompt_video_guide_trigger, prompt_enhancer    
@@ -6522,6 +6681,24 @@ def create_ui():
             box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3) !important;
         }
 
+        /* Log Display Styling */
+        #log_display {
+            font-family: 'Courier New', monospace !important;
+            font-size: 12px !important;
+            background-color: #1a1a1a !important;
+            color: #e0e0e0 !important;
+            border: 1px solid #444 !important;
+            border-radius: 4px !important;
+        }
+
+        #log_display textarea {
+            font-family: 'Courier New', monospace !important;
+            font-size: 12px !important;
+            background-color: #1a1a1a !important;
+            color: #e0e0e0 !important;
+            border: none !important;
+        }
+
     """
     UI_theme = server_config.get("UI_theme", "default")
     UI_theme  = args.theme if len(args.theme) > 0 else UI_theme
@@ -6598,7 +6775,10 @@ if __name__ == "__main__":
         server_name = os.getenv("SERVER_NAME", "localhost")
 
     print("===== Creating UI =====")
+    add_log_message("Starting WanGP application...", "SYSTEM")
+    add_log_message("Log system initialized successfully", "SYSTEM")
     demo = create_ui()
+    add_log_message("UI created successfully", "SYSTEM")
     print("===== UI Created Successfully =====")
 
     if args.open_browser and not is_huggingface_space:
@@ -6611,6 +6791,7 @@ if __name__ == "__main__":
 
     if is_huggingface_space:
         print("===== Launching for Hugging Face Spaces =====")
+        add_log_message("Launching server for Hugging Face Spaces", "SYSTEM")
         # Hugging Face Spaces configuration
         demo.launch(
             server_name="0.0.0.0",
@@ -6622,6 +6803,7 @@ if __name__ == "__main__":
         )
     else:
         print("===== Launching for Local Development =====")
+        add_log_message(f"Launching server on {server_name}:{server_port}", "SYSTEM")
         # Local development configuration
         demo.launch(
             server_name=server_name,

@@ -2766,6 +2766,64 @@ def abort_generation(state):
     else:
         return gr.Button(interactive=  True)
 
+def force_abort_generation(state):
+    """Force abort any ongoing generation - always available"""
+    gen = get_gen_info(state)
+    global wan_model, gen_in_progress
+
+    aborted_items = []
+
+    # Set abort flags for current generation
+    if "in_progress" in gen:
+        gen["abort"] = True
+        gen["extra_orders"] = 0
+        aborted_items.append("current generation")
+        print("🛑 Force Abort: Signalling abort for in-progress generation")
+
+    # Interrupt the model if it exists
+    if wan_model is not None:
+        wan_model._interrupt = True
+        aborted_items.append("model processing")
+        print("🛑 Force Abort: Model interrupt signal sent")
+
+    # Clear global generation flag
+    if gen_in_progress:
+        gen_in_progress = False
+        aborted_items.append("generation process")
+        print("🛑 Force Abort: Global generation flag cleared")
+
+    # Clear queue
+    queue = gen.get("queue", [])
+    if queue:
+        queue_count = len(queue)
+        queue.clear()
+        gen["prompts_max"] = 0
+        aborted_items.append(f"{queue_count} queued task(s)")
+        print(f"🛑 Force Abort: Cleared {queue_count} tasks from queue")
+
+    # Reset generation state
+    if "progress_phase" in gen:
+        del gen["progress_phase"]
+    if "progress_status" in gen:
+        gen["progress_status"] = "Aborted by user"
+
+    # Clear any preview data
+    if "preview" in gen:
+        del gen["preview"]
+
+    if aborted_items:
+        items_text = ", ".join(aborted_items)
+        msg = f"🛑 Force Abort: Stopped {items_text}"
+        gen["status"] = msg
+        gr.Info(msg)
+        print(f"🛑 Force Abort completed: {items_text}")
+        return gr.Button("🛑 Force Abort", variant="stop", interactive=True)
+    else:
+        msg = "ℹ️ No active generation to abort"
+        gr.Info(msg)
+        print("ℹ️ Force Abort: No active generation found")
+        return gr.Button("🛑 Force Abort", variant="secondary", interactive=True)
+
 
 
 def refresh_gallery(state): #, msg
@@ -5411,7 +5469,10 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                 output_trigger = gr.Text(interactive= False, visible=False)
                 refresh_form_trigger = gr.Text(interactive= False, visible=False)
 
-                generate_btn = gr.Button("Generate")
+                with gr.Row():
+                    generate_btn = gr.Button("Generate", scale=3)
+                    force_abort_btn = gr.Button("🛑 Force Abort", variant="stop", scale=1,
+                                              info="Stop any ongoing generation immediately - always available")
                 add_to_queue_btn = gr.Button("Add New Prompt To Queue", visible = False)
 
                 with gr.Column(visible= False) as current_gen_column:
@@ -5509,7 +5570,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                 gen["status_display"] = True
                 return time.time()
 
-            start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js = get_js()
+            start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js, force_abort_keyboard_js = get_js()
 
             status_trigger.change(refresh_status_async, inputs= [state] , outputs= [gen_status])
 
@@ -5520,6 +5581,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
 
 
             abort_btn.click(abort_generation, [state], [ abort_btn] ) #.then(refresh_gallery, inputs = [state, gen_info], outputs = [output, gen_info, queue_df] )
+            force_abort_btn.click(force_abort_generation, [state], [force_abort_btn])
             onemoresample_btn.click(fn=one_more_sample,inputs=[state], outputs= [state])
             onemorewindow_btn.click(fn=one_more_window,inputs=[state], outputs= [state])
 
@@ -6169,7 +6231,41 @@ def get_js():
         }
     }
     """
-    return start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js
+    # Add keyboard shortcut for force abort (Ctrl+Shift+X)
+    force_abort_keyboard_js = """
+    () => {
+        function setupForceAbortShortcut() {
+            if (window.forceAbortListenerAdded) return;
+
+            document.addEventListener('keydown', function(e) {
+                // Ctrl+Shift+X to trigger force abort
+                if (e.ctrlKey && e.shiftKey && e.key === 'X') {
+                    e.preventDefault();
+                    const gradioApp = document.querySelector('gradio-app') || document;
+
+                    // Find the force abort button by looking for button with "🛑 Force Abort" text
+                    const buttons = gradioApp.querySelectorAll('button');
+                    for (let button of buttons) {
+                        if (button.textContent.includes('🛑 Force Abort')) {
+                            button.click();
+                            console.log('Force abort triggered via keyboard shortcut (Ctrl+Shift+X)');
+                            break;
+                        }
+                    }
+                }
+            });
+
+            window.forceAbortListenerAdded = true;
+            console.log('Force abort keyboard shortcut (Ctrl+Shift+X) registered');
+        }
+
+        // Setup immediately and also after a short delay to ensure DOM is ready
+        setupForceAbortShortcut();
+        setTimeout(setupForceAbortShortcut, 1000);
+    }
+    """
+
+    return start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js, force_abort_keyboard_js
 
 def create_ui():
     global vmc_event_handler    
@@ -6405,6 +6501,27 @@ def create_ui():
             pointer-events: none;
         }
 
+        /* Force Abort Button Styling */
+        button:has-text("🛑 Force Abort") {
+            background: linear-gradient(45deg, #dc3545, #c82333) !important;
+            border: 2px solid #bd2130 !important;
+            color: white !important;
+            font-weight: bold !important;
+            box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3) !important;
+            transition: all 0.2s ease !important;
+        }
+
+        button:has-text("🛑 Force Abort"):hover {
+            background: linear-gradient(45deg, #c82333, #bd2130) !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 8px rgba(220, 53, 69, 0.4) !important;
+        }
+
+        button:has-text("🛑 Force Abort"):active {
+            transform: translateY(0) !important;
+            box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3) !important;
+        }
+
     """
     UI_theme = server_config.get("UI_theme", "default")
     UI_theme  = args.theme if len(args.theme) > 0 else UI_theme
@@ -6451,6 +6568,10 @@ def create_ui():
                 generate_about_tab()
 
         main_tabs.select(fn=select_tab, inputs= [tab_state], outputs= main_tabs)
+
+        # Setup keyboard shortcuts when the app loads
+        main.load(fn=None, inputs=None, outputs=None, js=force_abort_keyboard_js)
+
         return main
 
 if __name__ == "__main__":

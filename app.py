@@ -5629,7 +5629,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                     with gr.Row():
                         refresh_log_btn = gr.Button("🔄 Refresh", size="sm", variant="secondary")
                         clear_log_btn = gr.Button("🗑️ Clear Logs", size="sm", variant="stop")
-                        auto_refresh_log = gr.Checkbox(label="Auto-refresh logs", value=True, scale=1)
+                        auto_refresh_log = gr.Checkbox(label="Manual refresh only", value=False, scale=1, interactive=False)
 
                     # Hidden trigger for auto-refresh
                     log_refresh_trigger = gr.Text(visible=False)
@@ -5697,10 +5697,8 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                 return get_log_messages()
 
             def refresh_log_auto(auto_refresh_enabled):
-                """Auto-refresh logs if enabled"""
-                if auto_refresh_enabled:
-                    return get_log_messages(), time.time()
-                return gr.update(), gr.update()
+                """Manual refresh logs (auto-refresh disabled for compatibility)"""
+                return get_log_messages(), gr.update()
 
             start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js, force_abort_keyboard_js = get_js()
 
@@ -5938,12 +5936,11 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                 outputs=[log_display]
             )
 
-            # Auto-refresh logs every 2 seconds when enabled
+            # Auto-refresh logs when trigger changes (manual refresh only for compatibility)
             log_refresh_trigger.change(
                 fn=refresh_log_auto,
                 inputs=[auto_refresh_log],
-                outputs=[log_display, log_refresh_trigger],
-                every=2
+                outputs=[log_display, log_refresh_trigger]
             )
 
             # Initialize log system when main app loads

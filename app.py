@@ -6424,7 +6424,11 @@ def get_js():
     return start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js, force_abort_keyboard_js
 
 def create_ui():
-    global vmc_event_handler    
+    global vmc_event_handler
+
+    # Get JavaScript functions
+    start_quit_timer_js, cancel_quit_timer_js, trigger_zip_download_js, trigger_settings_download_js, force_abort_keyboard_js = get_js()
+
     css = """
         #model_list{
         background-color:black;

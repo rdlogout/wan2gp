@@ -5572,8 +5572,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
 
                 with gr.Row():
                     generate_btn = gr.Button("Generate", scale=3)
-                    force_abort_btn = gr.Button("🛑 Force Abort", variant="stop", scale=1,
-                                              info="Stop any ongoing generation immediately - always available")
+                    force_abort_btn = gr.Button("🛑 Force Abort", variant="stop", scale=1)
                 add_to_queue_btn = gr.Button("Add New Prompt To Queue", visible = False)
 
                 with gr.Column(visible= False) as current_gen_column:
@@ -5623,8 +5622,7 @@ def generate_video_tab(update_form = False, state_dict = None, ui_defaults = Non
                             max_lines=20,
                             interactive=False,
                             elem_id="log_display",
-                            show_copy_button=True,
-                            autoscroll=True
+                            show_copy_button=True
                         )
                     with gr.Row():
                         refresh_log_btn = gr.Button("🔄 Refresh", size="sm", variant="secondary")

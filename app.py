@@ -15,6 +15,8 @@ import random
 import json
 from collections import deque
 
+# Force HF Spaces rebuild - Gradio compatibility fixes applied
+
 # Disable audio in containerized environments to prevent ALSA errors
 if os.environ.get('XDG_RUNTIME_DIR') is None and os.environ.get('DISPLAY') is None:
     os.environ['SDL_AUDIODRIVER'] = 'dummy'

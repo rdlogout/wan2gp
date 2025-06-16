@@ -56,12 +56,36 @@ Successfully debugged and fixed critical deployment errors for Hugging Face Spac
 - **Server Configuration**: Set correct server settings for HF Spaces (0.0.0.0:7860)
 - **Startup Logging**: Added debug messages to track startup progress
 
+### 5. Intelligent Resource Detection & Quality-Focused Defaults ✅
+
+**Features**:
+
+- Automatic hardware detection and optimal profile recommendation
+- Quality-prioritized defaults based on available resources
+- User-friendly resource information display
+
+**Implementation**:
+
+- **Resource Detection**: Automatically detects GPU VRAM and system RAM on startup
+- **Smart Profile Selection**:
+  - Profile 1 (24GB+ VRAM, 48GB+ RAM): HighRAM_HighVRAM - Maximum quality
+  - Profile 2 (12GB+ VRAM, 48GB+ RAM): HighRAM_LowVRAM - Good balance
+  - Profile 3 (24GB+ VRAM, 32GB+ RAM): LowRAM_HighVRAM - Short high-quality videos
+  - Profile 4 (12GB+ VRAM, 32GB+ RAM): LowRAM_LowVRAM - Balanced
+  - Profile 5 (<12GB VRAM): VeryLowRAM_LowVRAM - Minimal requirements
+- **Quality-Focused Defaults**:
+  - High-end (16GB+ VRAM): bf16 quantization, 35 steps, higher resolution, SLG enabled
+  - Mid-range (12GB+ VRAM): mixed bf16/int8, 30 steps, balanced settings
+  - Low-end (<12GB VRAM): int8 quantization, 25 steps, TeaCache enabled for speed
+- **UI Integration**: Shows detected hardware info and profile reasoning in header
+
 ## Git Commits
 
 - `f654a7d`: Main deployment fixes (Gradio Row scale + ALSA audio)
 - `8e70f1c`: Added validation test script
 - `6a42ac7`: Added comprehensive documentation
 - `63e1b64`: Startup optimization and share parameter fixes
+- `82011bf`: Intelligent resource detection and quality-focused defaults
 
 ## Testing
 
@@ -70,6 +94,7 @@ Successfully debugged and fixed critical deployment errors for Hugging Face Spac
 - ✅ Changes pushed to remote repository
 - ✅ Validation test script created
 - ✅ Startup optimization implemented
+- ✅ Intelligent resource detection implemented
 
 ## Expected Results
 
@@ -81,6 +106,9 @@ The application should now:
 - ✅ Start quickly in Hugging Face Spaces (no infinite "starting" indicator)
 - ✅ Generate proper public URLs in local development (share=True working)
 - ✅ Deploy successfully to Hugging Face Spaces with optimized startup
+- ✅ Automatically detect hardware and select optimal profile for quality
+- ✅ Show resource detection info in UI header
+- ✅ Apply quality-focused defaults based on available hardware
 
 ## Monitoring
 

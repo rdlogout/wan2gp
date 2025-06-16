@@ -6,41 +6,61 @@ echo ========================================
 echo Starting WAN2GP Gradio Server
 echo ========================================
 
-REM Check if Python is installed
-python --version >nul 2>&1
+REM Check if conda is installed
+conda --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python is not installed or not in PATH
-    echo Please install Python 3.8+ and add it to your PATH
+    echo ERROR: Conda is not installed or not in PATH
+    echo Please install Anaconda or Miniconda first
+    echo Download from: https://docs.conda.io/en/latest/miniconda.html
     pause
     exit /b 1
 )
 
-REM Check if we're in the correct directory (look for app.py)
-if not exist "app.py" (
-    echo ERROR: app.py not found in current directory
-    echo Please run this script from the WAN2GP project directory
+REM Check if we're in the correct directory (look for wgp.py)
+if not exist "wgp.py" (
+    echo ERROR: wgp.py not found in current directory
+    echo.
+    echo This script should be run from the WAN2GP project directory.
+    echo If you haven't cloned the repository yet, run:
+    echo   git clone https://github.com/deepbeepmeep/Wan2GP.git
+    echo   cd Wan2GP
+    echo.
     pause
     exit /b 1
 )
 
-REM Check if virtual environment exists, if not create one
-if not exist "venv" (
-    echo Creating virtual environment...
-    python -m venv venv
+REM Check if conda environment exists, if not create it
+conda info --envs | findstr "wan2gp" >nul 2>&1
+if errorlevel 1 (
+    echo Creating conda environment wan2gp with Python 3.10.9...
+    conda create -n wan2gp python=3.10.9 -y
     if errorlevel 1 (
-        echo ERROR: Failed to create virtual environment
+        echo ERROR: Failed to create conda environment
         pause
         exit /b 1
     )
+    echo Conda environment created successfully
 )
 
-REM Activate virtual environment
-echo Activating virtual environment...
-call venv\Scripts\activate.bat
+REM Activate conda environment
+echo Activating conda environment wan2gp...
+call conda activate wan2gp
 if errorlevel 1 (
-    echo ERROR: Failed to activate virtual environment
+    echo ERROR: Failed to activate conda environment
     pause
     exit /b 1
+)
+
+REM Check if PyTorch is installed with correct version
+python -c "import torch; print('PyTorch version:', torch.__version__)" >nul 2>&1
+if errorlevel 1 (
+    echo Installing PyTorch 2.6.0 with CUDA 12.4 support...
+    pip install torch==2.6.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/test/cu124
+    if errorlevel 1 (
+        echo ERROR: Failed to install PyTorch
+        pause
+        exit /b 1
+    )
 )
 
 REM Check if requirements are installed
@@ -56,20 +76,49 @@ if errorlevel 1 (
     )
 )
 
+REM Ask user to choose mode
+echo.
+echo ========================================
+echo Choose WAN2GP Mode:
+echo ========================================
+echo 1. Text-to-Video (default)
+echo 2. Image-to-Video
+echo.
+set /p MODE_CHOICE="Enter your choice (1 or 2, default is 1): "
+
+REM Set default if no input
+if "%MODE_CHOICE%"=="" set MODE_CHOICE=1
+
+REM Set command based on choice
+if "%MODE_CHOICE%"=="1" (
+    set COMMAND=python wgp.py
+    set MODE_NAME=Text-to-Video
+) else if "%MODE_CHOICE%"=="2" (
+    set COMMAND=python wgp.py --i2v
+    set MODE_NAME=Image-to-Video
+) else (
+    echo Invalid choice. Using Text-to-Video mode as default.
+    set COMMAND=python wgp.py
+    set MODE_NAME=Text-to-Video
+)
+
 REM Set environment variables for better performance
 set PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 set CUDA_VISIBLE_DEVICES=0
 
 REM Start the Gradio server
+echo.
 echo ========================================
-echo Starting Gradio server...
+echo Starting WAN2GP in %MODE_NAME% mode...
 echo Server will be available at: http://localhost:7860
 echo Press Ctrl+C to stop the server
 echo ========================================
+echo.
 
-python app.py
+%COMMAND%
 
 REM If we get here, the server has stopped
+echo.
 echo ========================================
 echo Server stopped
 echo ========================================

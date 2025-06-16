@@ -2,9 +2,47 @@
 
 This directory contains utility scripts for running and deploying the WAN2GP application.
 
-## Starting the Gradio Server on Windows
+## Quick Installation (New Users)
 
-### Option 1: Batch File (start_gradio.bat)
+If you're setting up WAN2GP for the first time, use these installation scripts:
+
+### Windows
+
+```cmd
+install_wan2gp.bat
+```
+
+### Linux/Mac
+
+```bash
+./install_wan2gp.sh
+```
+
+These scripts will:
+
+1. Check prerequisites (Git, Conda)
+2. Clone the correct repository from https://github.com/deepbeepmeep/Wan2GP.git
+3. Create the conda environment
+4. Install all dependencies
+5. Automatically start the application
+
+## Prerequisites (Manual Setup)
+
+If you prefer manual setup, make sure you have:
+
+1. **Conda** (Anaconda or Miniconda) installed
+2. **Git** installed
+3. The correct WAN2GP repository cloned:
+   ```bash
+   git clone https://github.com/deepbeepmeep/Wan2GP.git
+   cd Wan2GP
+   ```
+
+## Starting the Gradio Server
+
+### Windows Users
+
+#### Option 1: Batch File (start_gradio.bat)
 
 Double-click `start_gradio.bat` or run from command prompt:
 
@@ -12,7 +50,7 @@ Double-click `start_gradio.bat` or run from command prompt:
 start_gradio.bat
 ```
 
-### Option 2: PowerShell Script (start_gradio.ps1)
+#### Option 2: PowerShell Script (start_gradio.ps1)
 
 Run from PowerShell:
 
@@ -20,13 +58,39 @@ Run from PowerShell:
 .\start_gradio.ps1
 ```
 
-Both scripts will:
+### Linux/Mac Users
 
-- Check if Python is installed
-- Create a virtual environment if it doesn't exist
-- Install requirements if needed
-- Set optimal environment variables
-- Start the Gradio server on http://localhost:7860
+#### Shell Script (start_gradio.sh)
+
+Run from terminal:
+
+```bash
+./start_gradio.sh
+```
+
+## What the Scripts Do
+
+All scripts will automatically:
+
+1. Check if Conda is installed
+2. Create conda environment `wan2gp` with Python 3.10.9 if it doesn't exist
+3. Install PyTorch 2.6.0 with CUDA 12.4 support if needed
+4. Install requirements from requirements.txt if needed
+5. **Ask you to choose between Text-to-Video or Image-to-Video mode**
+6. Set optimal environment variables
+7. Start the appropriate server:
+   - Text-to-Video: `python wgp.py`
+   - Image-to-Video: `python wgp.py --i2v`
+8. Server will be available at http://localhost:7860
+
+## Mode Selection
+
+When you run any of the scripts, you'll be prompted to choose:
+
+1. **Text-to-Video (default)** - Generate videos from text prompts
+2. **Image-to-Video** - Generate videos from input images
+
+Simply enter `1` or `2` when prompted, or press Enter for the default Text-to-Video mode.
 
 ## Pushing to Both Repositories
 

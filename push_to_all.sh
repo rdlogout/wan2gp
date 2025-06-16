@@ -19,6 +19,12 @@ if ! git rev-parse --git-dir > /dev/null 2>&1; then
     exit 1
 fi
 
+# Clean up any cache files that might cause issues
+echo -e "${YELLOW}Cleaning up cache files...${NC}"
+find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find . -name "*.pyc" -delete 2>/dev/null || true
+find . -name "*.pyo" -delete 2>/dev/null || true
+
 # Check if there are any changes to commit
 if git diff-index --quiet HEAD --; then
     echo -e "${YELLOW}No changes to commit. Pushing existing commits...${NC}"
@@ -30,7 +36,7 @@ else
     else
         COMMIT_MSG="$1"
     fi
-    
+
     # Add all changes and commit
     echo -e "${YELLOW}Adding and committing changes...${NC}"
     git add .
@@ -41,18 +47,30 @@ fi
 echo -e "${YELLOW}Pushing to Hugging Face...${NC}"
 if git push origin main; then
     echo -e "${GREEN}✓ Successfully pushed to Hugging Face${NC}"
+    HF_SUCCESS=true
 else
     echo -e "${RED}✗ Failed to push to Hugging Face${NC}"
-    exit 1
+    echo -e "${YELLOW}This might be due to binary files or other restrictions${NC}"
+    HF_SUCCESS=false
 fi
 
 # Push to GitHub
 echo -e "${YELLOW}Pushing to GitHub...${NC}"
 if git push github main; then
     echo -e "${GREEN}✓ Successfully pushed to GitHub${NC}"
+    GH_SUCCESS=true
 else
     echo -e "${RED}✗ Failed to push to GitHub${NC}"
-    exit 1
+    GH_SUCCESS=false
 fi
 
-echo -e "${GREEN}=== Successfully pushed to both repositories ===${NC}"
+# Summary
+if [ "$HF_SUCCESS" = true ] && [ "$GH_SUCCESS" = true ]; then
+    echo -e "${GREEN}=== Successfully pushed to both repositories ===${NC}"
+elif [ "$HF_SUCCESS" = true ] || [ "$GH_SUCCESS" = true ]; then
+    echo -e "${YELLOW}=== Partially successful - check failed pushes above ===${NC}"
+    exit 1
+else
+    echo -e "${RED}=== Failed to push to both repositories ===${NC}"
+    exit 1
+fi

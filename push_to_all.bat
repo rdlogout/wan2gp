@@ -14,6 +14,12 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Clean up cache files that might cause issues
+echo Cleaning up cache files...
+for /d /r . %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d" 2>nul
+del /s /q *.pyc 2>nul
+del /s /q *.pyo 2>nul
+
 REM Check if there are any changes to commit
 git diff-index --quiet HEAD --
 if errorlevel 1 (
@@ -40,11 +46,12 @@ REM Push to Hugging Face (origin)
 echo Pushing to Hugging Face...
 git push origin main
 if errorlevel 1 (
-    echo ERROR: Failed to push to Hugging Face
-    pause
-    exit /b 1
+    echo WARNING: Failed to push to Hugging Face
+    echo This might be due to binary files or other restrictions
+    set HF_SUCCESS=false
 ) else (
     echo SUCCESS: Pushed to Hugging Face
+    set HF_SUCCESS=true
 )
 
 REM Push to GitHub
@@ -52,13 +59,17 @@ echo Pushing to GitHub...
 git push github main
 if errorlevel 1 (
     echo ERROR: Failed to push to GitHub
-    pause
-    exit /b 1
+    set GH_SUCCESS=false
 ) else (
     echo SUCCESS: Pushed to GitHub
+    set GH_SUCCESS=true
 )
 
 echo ========================================
-echo Successfully pushed to both repositories
+if "%HF_SUCCESS%"=="true" if "%GH_SUCCESS%"=="true" (
+    echo Successfully pushed to both repositories
+) else (
+    echo Check the output above for any failed pushes
+)
 echo ========================================
 pause

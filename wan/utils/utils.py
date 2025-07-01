@@ -8,11 +8,18 @@ import torch.nn.functional as F
 
 import imageio
 import torch
-import decord
+try:
+    import decord
+except ImportError:
+    decord = None
 import torchvision
 from PIL import Image
 import numpy as np
-from rembg import remove, new_session
+try:
+    from rembg import remove, new_session
+except ImportError:
+    remove = None
+    new_session = None
 import random
 
 __all__ = ['cache_video', 'cache_image', 'str2bool']
@@ -58,6 +65,8 @@ def resample(video_fps, video_frames_count, max_target_frames_count, target_fps,
     return frame_ids
 
 def get_video_frame(file_name, frame_no):
+    if decord is None:
+        raise ImportError("The 'decord' package is required for video processing")
     decord.bridge.set_bridge('torch')
     reader = decord.VideoReader(file_name)
 
@@ -72,6 +81,8 @@ def resize_lanczos(img, h, w):
 
 
 def remove_background(img, session=None):
+    if remove is None or new_session is None:
+        raise ImportError("The 'rembg' package is required for background removal")
     if session ==None:
         session = new_session() 
     img = Image.fromarray(np.clip(255. * img.movedim(0, -1).cpu().numpy(), 0, 255).astype(np.uint8))
@@ -125,7 +136,9 @@ def calculate_new_dimensions(canvas_height, canvas_width, height, width, fit_int
     return new_height, new_width
 
 def resize_and_remove_background(img_list, budget_width, budget_height, rm_background, fit_into_canvas = False ):
-    if rm_background  > 0:
+    if rm_background > 0:
+        if remove is None or new_session is None:
+            raise ImportError("The 'rembg' package is required for background removal")
         session = new_session() 
 
     output_list =[]

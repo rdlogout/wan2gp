@@ -4,8 +4,18 @@ from importlib.metadata import version
 from mmgp import offload
 import torch.nn.functional as F
 
-major, minor = torch.cuda.get_device_capability(None)
-bfloat16_supported =  major >= 8 
+# Handle CUDA availability gracefully for deployment environments like Hugging Face Spaces
+try:
+    if torch.cuda.is_available():
+        major, minor = torch.cuda.get_device_capability(None)
+        bfloat16_supported = major >= 8
+    else:
+        major, minor = 0, 0
+        bfloat16_supported = False
+except (RuntimeError, AssertionError):
+    # Handle case where CUDA is not compiled or available
+    major, minor = 0, 0
+    bfloat16_supported = False 
 
 try:
     from xformers.ops import memory_efficient_attention
@@ -135,8 +145,14 @@ def get_supported_attention_modes():
         if "sage2" in ret:
             ret.remove("sage2")
 
-    major, minor = torch.cuda.get_device_capability()
-    if  major < 7:
+    try:
+        if torch.cuda.is_available():
+            major, minor = torch.cuda.get_device_capability()
+            if major < 7:
+                if "sage" in ret:
+                    ret.remove("sage")
+    except (RuntimeError, AssertionError):
+        # If CUDA is not available, remove sage attention
         if "sage" in ret:
             ret.remove("sage")
     return ret

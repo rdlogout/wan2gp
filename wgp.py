@@ -1452,12 +1452,20 @@ attention_modes_installed = get_attention_modes()
 attention_modes_supported = get_supported_attention_modes()
 args = _parse_args()
 
-major, minor = torch.cuda.get_device_capability(args.gpu if len(args.gpu) > 0 else None)
-if  major < 8:
-    print("Switching to FP16 models when possible as GPU architecture doesn't support optimed BF16 Kernels")
+try:
+    if torch.cuda.is_available():
+        major, minor = torch.cuda.get_device_capability(args.gpu if len(args.gpu) > 0 else None)
+        if major < 8:
+            print("Switching to FP16 models when possible as GPU architecture doesn't support optimed BF16 Kernels")
+            bfloat16_supported = False
+        else:
+            bfloat16_supported = True
+    else:
+        print("CUDA not available, using CPU fallback")
+        bfloat16_supported = False
+except (RuntimeError, AssertionError):
+    print("CUDA not available, using CPU fallback")
     bfloat16_supported = False
-else:
-    bfloat16_supported = True
 
 args.flow_reverse = True
 processing_device = args.gpu
@@ -2799,7 +2807,10 @@ def convert_image(image):
 def get_resampled_video(video_in, start_frame, max_frames, target_fps, bridge='torch'):
     from wan.utils.utils import resample
 
-    import decord
+    try:
+        import decord
+    except ImportError:
+        raise ImportError("The 'decord' package is required for video processing")
     decord.bridge.set_bridge(bridge)
     reader = decord.VideoReader(video_in)
     fps = round(reader.get_avg_fps())

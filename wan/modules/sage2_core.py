@@ -54,19 +54,29 @@ import warnings
 import os
 
 def is_sage2_supported():
-    device_count = torch.cuda.device_count()
-    for i in range(device_count):
-        major, minor = torch.cuda.get_device_capability(i)
-        if major < 8:
+    try:
+        if not torch.cuda.is_available():
             return False
-    return True
+        device_count = torch.cuda.device_count()
+        for i in range(device_count):
+            major, minor = torch.cuda.get_device_capability(i)
+            if major < 8:
+                return False
+        return True
+    except (RuntimeError, AssertionError):
+        return False
 
 def get_cuda_arch_versions():
-    cuda_archs = []
-    for i in range(torch.cuda.device_count()):
-        major, minor = torch.cuda.get_device_capability(i)
-        cuda_archs.append(f"sm{major}{minor}")
-    return cuda_archs
+    try:
+        if not torch.cuda.is_available():
+            return []
+        cuda_archs = []
+        for i in range(torch.cuda.device_count()):
+            major, minor = torch.cuda.get_device_capability(i)
+            cuda_archs.append(f"sm{major}{minor}")
+        return cuda_archs
+    except (RuntimeError, AssertionError):
+        return []
 
 def sageattn(
     qkv_list,

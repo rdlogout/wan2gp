@@ -1182,6 +1182,7 @@ def _parse_args():
     parser.add_argument(
         "--share",
         action="store_true",
+        default=True,
         help="Create a shared URL to access webserver remotely"
     )
 
@@ -1349,7 +1350,7 @@ def _parse_args():
     parser.add_argument(
         "--server-port",
         type=str,
-        default=0,
+        default="8188",
         help="Server port"
     )
 
